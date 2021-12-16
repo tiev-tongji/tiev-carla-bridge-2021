@@ -1,0 +1,8 @@
+/output/
+/.vscode/
+/fusionmap_usingcpp/.vs/
+/fusionmap_usingcpp/fusionmap_usingcpp/x64/
+__pycache__/
+fusionmap_usingcpp.*
+!fusionmap_usingcpp.pyd
+build/

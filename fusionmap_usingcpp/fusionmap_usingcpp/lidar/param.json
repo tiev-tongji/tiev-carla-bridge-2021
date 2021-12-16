@@ -1,0 +1,40 @@
+{
+  "display_source_point_cloud": false,
+  "lidar_setting": {
+    "pitch_compensation":0,
+    "test_mode":false,
+    "ruby_lidar_ip": "192.168.1.102",
+    "ruby_lidar_port": 6699,
+    "rs16_left_lidar_ip": "192.168.3.102",
+    "rs16_left_lidar_port": 6699,
+    "rs16_right_lidar_ip": "192.168.2.102",
+    "rs16_right_lidar_port": 6699,
+    "blind_front_lidar_ip": "192.168.4.102",
+    "blind_front_lidar_port": 6699,
+    "blind_back_lidar_ip": "192.168.5.102",
+    "blind_back_lidar_port": 6699
+  },
+  "grid_map_setting": {
+    "map_size_x": 100,
+    "map_size_y": 50,
+    "origin_in_map_x": 30,
+    "origin_in_map_y": 25,
+    "grid_map_z_resolution": 0.3,
+    "grid_map_resolution": 0.2,
+    "grid_map_obstacle_threshold": 0.1,
+    "car_top_to_pandar": 1.0,
+    "cat_bottom_to_pandar": -0.5,
+    "grid_map_point_to_origin_min": 1,
+    "noise_threshold":3,
+    "noise_search_window_expend":1
+  },
+  "kalmax_filter_setting": {
+    "correspondence_threshold": 1e-40,
+    "pruning_threshold": 0.8,
+    "measurement_variance": 0.1,
+    "position_variance": 0.7,
+    "velocity_variance": 1,
+    "initial_position_variance": 0.05,
+    "initial_velocity_variance": 1.0
+  }
+}

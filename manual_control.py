@@ -273,9 +273,9 @@ class World(object):
                 sys.exit(1)
             spawn_points = self.map.get_spawn_points()
             spawn_point = random.choice(spawn_points) if spawn_points else carla.Transform()
-            spawn_point.location.x = 170.4
-            spawn_point.location.y = 90
-            spawn_point.location.z = 0.5
+            # spawn_point.location.x = 170.4
+            # spawn_point.location.y = 90
+            # spawn_point.location.z = 0.5
             self.player = self.world.try_spawn_actor(blueprint, spawn_point)
             if self.player is None:
                 print('spawn point is not correct !')

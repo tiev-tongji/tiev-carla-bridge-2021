@@ -431,7 +431,7 @@ class World(object):
         cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
         cam_pos_index2 = 1
         # Get a random blueprint.
-        blueprint = random.choice(self.world.get_blueprint_library().filter("vehicle.mini.cooperst"))
+        blueprint = random.choice(self.world.get_blueprint_library().filter("vehicle").filter("mini"))
         if self._actor_filter == 'walker':
             blueprint = random.choice(self.world.get_blueprint_library().filter(self._actor_filter))
             print('walker')
@@ -1057,7 +1057,7 @@ class KeyboardControl(object):
                         world.player.set_autopilot(True)
                     else:
                         world.restart(0)
-                elif event.key > K_0 and event.key <= K_5 and pygame.key.get_mods() & KMOD_CTRL:
+                elif event.key >= K_0 and event.key <= K_5 and pygame.key.get_mods() & KMOD_CTRL:
                     with open("sim_params.json", 'r') as f:
                         tmp = json.load(f)
                     ego_transform = world.player.get_transform()
@@ -1082,6 +1082,7 @@ class KeyboardControl(object):
                                 break
                             f.write("\""+item[0]+"\""+': '+str(item[1])+',\n')
                         f.write("\n}")
+                    print('origin remembered')
                 elif event.key >= K_0 and event.key <= K_5 and not pygame.key.get_mods() & KMOD_CTRL:
                     if event.key == K_1:
                         world.restart(1)
@@ -1325,7 +1326,7 @@ class HUD(object):
             'EQUAL to spawn NPCs',
             'SHIFT+EQUAL for static NPCs',
             'MINUS to destroy all NPCs',
-            'SHIFT+0~5 to remember location', 
+            'CTRL+0~5 to remember location', 
             '0~5 to go to remembered loc(0~5)',
             '6~9 to trace back 5m']
         if len(vehicles) > 1:
@@ -1558,13 +1559,28 @@ class GnssSensor(object):
 
 
 
-        _navinfo.utmX = _utm_origin[0] + t.location.x
-        _navinfo.utmY = _utm_origin[1] - t.location.y
-        gps = utm.to_latlon(_navinfo.utmX, _navinfo.utmY,
-                            _utm_origin[2], _utm_origin[3])
-        _navinfo.mLat = gps[0]
-        _navinfo.mLon = gps[1]
-        _navinfo.mAlt = t.location.z
+        # _navinfo.utmX = _utm_origin[0] + t.location.x
+        # _navinfo.utmY = _utm_origin[1] - t.location.y
+        # gps = utm.to_latlon(_navinfo.utmX, _navinfo.utmY,
+        #                     _utm_origin[2], _utm_origin[3])
+        # _navinfo.mLat = gps[0]
+        # _navinfo.mLon = gps[1]
+        # _navinfo.mAlt = t.location.z
+
+        _navinfo.mLat = self.lat
+        _navinfo.mLon = self.lon
+        # utm_pos output: [utmX, utmY, lon_zone, lat_zone]
+        utm_pos = utm.from_latlon(latitude=_navinfo.mLat, longitude=_navinfo.mLon)
+        _navinfo.utmX = utm_pos[0]
+        _navinfo.utmY = utm_pos[1]
+        
+        
+
+        # xiqu global planning test
+        # _navinfo.mLat = 31.2930400
+        # _navinfo.mLon = 121.2027973
+        # _navinfo.utmX = 328942
+        # _navinfo.utmY = 3463473
 
         heading = -t.rotation.yaw
         while heading < -180:
@@ -1725,7 +1741,7 @@ class CameraManager(object):
         # self.points_stack_pos = 0
         # self.points = np.zeros((1, 3), dtype=np.dtype('f4'))
         self.points_1d = []
-        self.num_points_1d = 50000*3
+        self.num_points_1d = 50000*4
         self.points_np = np.array([0]*self.num_points_1d,dtype='d')
         self.stack_pos = 0
         self.onProcessing=False
@@ -1850,8 +1866,9 @@ class CameraManager(object):
             return
         if self.sensors[self.index][0].startswith('sensor.lidar'): 
             _mutex_fusionmap.acquire()
-            points_temp = np.frombuffer(image.raw_data, dtype=np.dtype('f4'))
-            temp_end = int(len(points_temp)/3)*3
+            points_temp = np.copy(np.frombuffer(image.raw_data, dtype=np.dtype('f4')))
+            # x, y, z, intensity
+            temp_end = int(len(points_temp)/4)*4
             stack_end = self.stack_pos + temp_end
             if stack_end < self.num_points_1d:
                 start = time.process_time()
@@ -1872,6 +1889,12 @@ class CameraManager(object):
             # self.fileid += 1
             # exit()
             start = time.perf_counter()
+            data = np.reshape(self.points_np, (int(self.points_np.shape[0] / 4), 4))[:, :3]
+            data = data[:, [1, 0, 2]]
+            data[:, 1:] = -data[:, 1:]
+            end = time.perf_counter()
+            print("conversion: ", (end-start) * 1e3)
+            start = time.perf_counter()
             _fusionmap = structFUSIONMAP()
             _fusionmap.cells = []
             _mutex_objectlist.acquire()
@@ -1884,7 +1907,7 @@ class CameraManager(object):
                 # make sure two corner point selected is counter-clockwise arranged. 
                 object_list_pass2cpp.append([obj.corners.p2.x, obj.corners.p2.y, obj.corners.p1.x, obj.corners.p1.y, \
                     obj.length, obj.width, inflation_size])
-            self.map_processor.GetGridMap(self.points_np, _fusionmap.cells, 0, object_list_pass2cpp, True) # 0 for not showing info. 1 for showing.
+            self.map_processor.GetGridMap(data.flatten(), _fusionmap.cells, 0, object_list_pass2cpp, True) # 0 for not showing info. 1 for showing.
             _fusionmap.resolution = kMapResolution
             _fusionmap.cols = kMapColNum
             _fusionmap.rows = kMapRowNum

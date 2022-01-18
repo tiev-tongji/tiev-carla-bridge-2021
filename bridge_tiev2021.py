@@ -62,6 +62,7 @@ from carla import ColorConverter as cc
 
 import argparse
 import collections
+from collections import deque
 import datetime
 import logging
 import math
@@ -419,7 +420,7 @@ class World(object):
         self.world.on_tick(hud.on_world_tick)
         self.recording_enabled = False
         self.recording_start = 0
-        self.history_position = []
+        self.history_position = deque([], maxlen = 10000)
 
     def restart(self, restart_pos_id):
         print('world restarting')
@@ -470,7 +471,8 @@ class World(object):
                 spawn_point.location.y = self.history_position[-restart_distance][1]
                 spawn_point.location.z = self.history_position[-restart_distance][2]
                 spawn_point.rotation.yaw = self.history_position[-restart_distance][3]  
-                self.history_position = self.history_position[:-restart_distance]  
+                for i in range(restart_distance):
+                    self.history_position.pop()
             else:
                 spawn_point.location.x = spawn_origin[restart_pos_str][0][0]
                 spawn_point.location.y = spawn_origin[restart_pos_str][0][1]
@@ -538,8 +540,6 @@ class World(object):
             else:
                 if (pos.location.x - self.history_position[-1][0])**2 + (pos.location.y - self.history_position[-1][1])**2 > 1:
                     self.history_position.append([pos.location.x, pos.location.y, pos.location.z+0.1, pos.rotation.yaw])
-            if len(self.history_position) >= 10000:
-                self.history_position = []
 
     def render(self, display):
         self.camera_manager.render(display)
@@ -1750,8 +1750,8 @@ class CameraManager(object):
         Attachment = carla.AttachmentType
         self._camera_transforms = [
             (carla.Transform(carla.Location(x=0.0, y=0.0, z=2), carla.Rotation(pitch=0.0, roll=0.0, yaw=0.0)), Attachment.Rigid),
-            (carla.Transform(carla.Location(x=-5.5, z=2.5), carla.Rotation(pitch=8.0)), Attachment.SpringArm)
-            # (carla.Transform(carla.Location(x=1.6, z=1.7)), Attachment.Rigid),
+            (carla.Transform(carla.Location(x=-5.5, z=2.5), carla.Rotation(pitch=8.0)), Attachment.SpringArm) # bird view
+            # (carla.Transform(carla.Location(x=0, y=-bound_y*0.2, z=1.3)), Attachment.Rigid), # driver view
             # (carla.Transform(carla.Location(x=5.5, y=1.5, z=1.5)), Attachment.SpringArm),
             # (carla.Transform(carla.Location(x=-8.0, z=6.0), carla.Rotation(pitch=6.0)), Attachment.SpringArm),
             # (carla.Transform(carla.Location(x=-1, y=-bound_y, z=0.5)), Attachment.Rigid)
@@ -1893,7 +1893,7 @@ class CameraManager(object):
             data = data[:, [1, 0, 2]]
             data[:, 1:] = -data[:, 1:]
             end = time.perf_counter()
-            print("conversion: ", (end-start) * 1e3)
+            # print("conversion: ", (end-start) * 1e3)
             start = time.perf_counter()
             _fusionmap = structFUSIONMAP()
             _fusionmap.cells = []

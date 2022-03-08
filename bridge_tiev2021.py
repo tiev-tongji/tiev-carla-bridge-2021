@@ -4,6 +4,7 @@
 bridge for tiev and carla in windows
 """
 from __future__ import print_function
+from fnmatch import translate
 import sys
 import json
 
@@ -73,6 +74,8 @@ import time
 import threading
 import json
 import math
+import ctypes
+import inspect
 
 try:
     import pygame
@@ -179,13 +182,14 @@ _threads = []
 
 _pid_controller = PID()
 # 121: 12: 44E 31: 16: 54N
-_utm_origin = utm.from_latlon(31.281666666666666, 121.21222222222222)
+_utm_origin = utm.from_latlon(31.291919797036996, 121.2025854628344)
 print("origin: ", _utm_origin[0], ", ", _utm_origin[1])
 #_utm_origin = utm.from_latlon(31.281589, 121.215578)
 
 _record_on = False
 _stop_lcm = False
 tiev_control = False
+translation = False
 
 kMapRowNum = 501
 kMapRowCenter = 351
@@ -277,8 +281,8 @@ def pub_objectlist_loop(interval):
 
 
 def publish_all_async(interval_high, interval_low):
-    t_pub_navinfo = threading.Thread(target=pub_navinfo_loop, args=(interval_high,))
-    _threads.append(t_pub_navinfo)
+    # t_pub_navinfo = threading.Thread(target=pub_navinfo_loop, args=(interval_high,))
+    # _threads.append(t_pub_navinfo)
 
     t_pub_caninfo = threading.Thread(target=pub_caninfo_loop, args=(interval_high,))
     _threads.append(t_pub_caninfo)
@@ -290,10 +294,33 @@ def publish_all_async(interval_high, interval_low):
         thread.start()
 
 
+def _async_raise(tid, exctype):
+    """raises the exception, performs cleanup if needed"""
+    tid = ctypes.c_long(tid)
+    if not inspect.isclass(exctype):
+        exctype = type(exctype)
+    res = ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, ctypes.py_object(exctype))
+    if res == 0:
+        raise ValueError("invalid thread id")
+    elif res != 1:
+        # """if it returns a number greater than one, you're in trouble,
+        # and you should call it again with exc=NULL to revert the effect"""
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, None)
+        raise SystemError("PyThreadState_SetAsyncExc failed")
+
+def stop_thread(thread):
+    _async_raise(thread.ident, SystemExit)
+
 def cancontrol_handler(channel, data): 
     msg = structCANCONTROL.decode(data)
     _cancontrol.aimsteer = msg.aimsteer  # deg
     _cancontrol.aimspeed = msg.aimspeed
+
+def navinfo_handler(channel, data): 
+    msg = structNAVINFO.decode(data)
+    _navinfo.utmX = msg.utmX
+    _navinfo.utmY = msg.utmY
+    _navinfo.mHeading = msg.mHeading
 
 def cancontrol_handler_zlg(channel, data): 
     msg = structCANCONTROLZLG.decode(data)
@@ -310,11 +337,7 @@ def get_xcm():
             break  
         _tunnel.handle()
 
-global _tunnel_sub
-if using_zlg_control:
-    _tunnel_sub = _tunnel.subscribe('CANCONTROLZLG', cancontrol_handler_zlg)
-else:
-    _tunnel_sub = _tunnel.subscribe('CANCONTROL', cancontrol_handler)
+_subs = []
 def subscribe_all():
     if xcm_version == "LCM":
         if using_zlg_control:
@@ -322,7 +345,10 @@ def subscribe_all():
             thread_sub = threading.Thread(target=get_xcm, args=())
             thread_sub.start()
         else:
-            _tunnel.subscribe('CANCONTROL', cancontrol_handler)
+            sub1 = _tunnel.subscribe('CANCONTROL', cancontrol_handler)
+            _subs.append(sub1)
+            sub2 = _tunnel.subscribe('NAVINFO', navinfo_handler)
+            _subs.append(sub2)
             thread_sub = threading.Thread(target=get_xcm, args=())
             thread_sub.start()
     elif xcm_version == "ZCM":
@@ -462,6 +488,22 @@ class World(object):
         restart_pos_str = "origin_" + str(restart_pos_id)
         if restart_pos_id < 0:
             restart_pos_str = "origin_0"
+        utmx = 329030.358365
+        utmy = 3463402.322888
+        heading = 2.073194
+        h = math.degrees(-_navinfo.mHeading)
+        while (h >= 360):
+            h -= 360
+        while (h < -360):
+            h += 360
+        x = utmx - _utm_origin[0]
+        y = _utm_origin[1] - utmy
+        _navinfo.utmX = utmx
+        _navinfo.utmY = utmy
+        _navinfo.mHeading = heading
+        z = 0.2
+        # h = 0
+        specific_origin = [x, y, z, h]
         if self.player is not None:
             global restart_distance
             spawn_point = self.player.get_transform()
@@ -494,6 +536,10 @@ class World(object):
             spawn_point.location.y = spawn_origin[restart_pos_str][0][1]
             spawn_point.location.z = spawn_origin[restart_pos_str][0][2]
             spawn_point.rotation.yaw = spawn_origin[restart_pos_str][1][0]
+            # spawn_point.location.x = specific_origin[0]
+            # spawn_point.location.y = specific_origin[1]
+            # spawn_point.location.z = specific_origin[2]
+            # spawn_point.rotation.yaw = specific_origin[3]
             self.player = self.world.try_spawn_actor(blueprint, spawn_point)
             if self.player is None:
                 print("use random spawn point")
@@ -1084,6 +1130,8 @@ class KeyboardControl(object):
                         f.write("\n}")
                     print('origin remembered')
                 elif event.key >= K_0 and event.key <= K_5 and not pygame.key.get_mods() & KMOD_CTRL:
+                    global restart_distance
+                    restart_distance = -1
                     if event.key == K_1:
                         world.restart(1)
                     elif event.key == K_2:
@@ -1097,7 +1145,6 @@ class KeyboardControl(object):
                     else:
                         world.restart(0)
                 elif event.key > K_5 and event.key <= K_9:
-                    global restart_distance
                     restart_distance = 5
                     world.restart(-1)
                     # restart_distance = int(event.key - K_5) * 5
@@ -1162,7 +1209,24 @@ class KeyboardControl(object):
             elif isinstance(self._control, carla.WalkerControl):
                 self._parse_walker_keys(
                     pygame.key.get_pressed(), clock.get_time(), world)
-            world.player.apply_control(self._control)
+            # world.player.apply_control(self._control)
+            t = world.player.get_transform()
+            x = _navinfo.utmX - _utm_origin[0]
+            y = _utm_origin[1] - _navinfo.utmY
+            h = math.degrees(-_navinfo.mHeading)
+            while (h >= 360):
+                h -= 360
+            while (h < -360):
+                h += 360
+            t.location.x = x 
+            t.location.y = y
+            # t.location.z = 10
+            # print(x, y, h)
+            t.rotation.yaw = h
+            t.rotation.pitch = 0
+            t.rotation.roll = 0
+            world.player.set_transform(t)
+
         elif self._hil_enabled:
             self._parse_tiev_control()
             world.player.apply_control(self._control)
@@ -1558,23 +1622,12 @@ class GnssSensor(object):
         right = t.get_right_vector()
 
 
-
-        # _navinfo.utmX = _utm_origin[0] + t.location.x
-        # _navinfo.utmY = _utm_origin[1] - t.location.y
-        # gps = utm.to_latlon(_navinfo.utmX, _navinfo.utmY,
-        #                     _utm_origin[2], _utm_origin[3])
-        # _navinfo.mLat = gps[0]
-        # _navinfo.mLon = gps[1]
-        # _navinfo.mAlt = t.location.z
-
-        _navinfo.mLat = self.lat
-        _navinfo.mLon = self.lon
-        # utm_pos output: [utmX, utmY, lon_zone, lat_zone]
-        utm_pos = utm.from_latlon(latitude=_navinfo.mLat, longitude=_navinfo.mLon)
-        _navinfo.utmX = utm_pos[0]
-        _navinfo.utmY = utm_pos[1]
-        
-        
+        # _navinfo.mLat = self.lat
+        # _navinfo.mLon = self.lon
+        # # utm_pos output: [utmX, utmY, lon_zone, lat_zone]
+        # utm_pos = utm.from_latlon(latitude=_navinfo.mLat, longitude=_navinfo.mLon)
+        # _navinfo.utmX = utm_pos[0]
+        # _navinfo.utmY = utm_pos[1]
 
         # xiqu global planning test
         # _navinfo.mLat = 31.2930400
@@ -1582,12 +1635,12 @@ class GnssSensor(object):
         # _navinfo.utmX = 328942
         # _navinfo.utmY = 3463473
 
-        heading = -t.rotation.yaw
-        while heading < -180:
-            heading = heading + 360
-        while heading > 180:
-            heading = heading - 360
-        _navinfo.mHeading = math.radians(heading)
+        # heading = -t.rotation.yaw
+        # while heading < -180:
+        #     heading = heading + 360
+        # while heading > 180:
+        #     heading = heading - 360
+        # _navinfo.mHeading = math.radians(heading)
         _navinfo.mPitch = t.rotation.pitch
         _navinfo.mAngularRateZ = math.radians(-va.z)
 
@@ -1988,7 +2041,6 @@ def game_loop(args):
             controller.destroy_npc(world)
             print('npc destroyed !')
 
-
         pygame.quit()
 
 
@@ -2065,7 +2117,8 @@ def main():
         game_loop(args)
         global _stop_lcm
         _stop_lcm = True
-        _tunnel.unsubscribe(_tunnel_sub)
+        for sub in _subs:
+            _tunnel.unsubscribe(sub)
         
 
     except KeyboardInterrupt:

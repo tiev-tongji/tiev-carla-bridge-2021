@@ -179,7 +179,7 @@ _threads = []
 
 _pid_controller = PID()
 # 121: 12: 44E 31: 16: 54N
-_utm_origin = utm.from_latlon(31.281666666666666, 121.21222222222222)
+_utm_origin = utm.from_latlon(31.281666666666666, 121.21222222222222) #Town03
 print("origin: ", _utm_origin[0], ", ", _utm_origin[1])
 #_utm_origin = utm.from_latlon(31.281589, 121.215578)
 
@@ -1559,20 +1559,20 @@ class GnssSensor(object):
 
 
 
-        # _navinfo.utmX = _utm_origin[0] + t.location.x
-        # _navinfo.utmY = _utm_origin[1] - t.location.y
-        # gps = utm.to_latlon(_navinfo.utmX, _navinfo.utmY,
-        #                     _utm_origin[2], _utm_origin[3])
-        # _navinfo.mLat = gps[0]
-        # _navinfo.mLon = gps[1]
-        # _navinfo.mAlt = t.location.z
+        _navinfo.utmX = _utm_origin[0] + t.location.x
+        _navinfo.utmY = _utm_origin[1] - t.location.y
+        gps = utm.to_latlon(_navinfo.utmX, _navinfo.utmY,
+                            _utm_origin[2], _utm_origin[3])
+        _navinfo.mLat = gps[0]
+        _navinfo.mLon = gps[1]
+        _navinfo.mAlt = t.location.z
 
-        _navinfo.mLat = self.lat
-        _navinfo.mLon = self.lon
-        # utm_pos output: [utmX, utmY, lon_zone, lat_zone]
-        utm_pos = utm.from_latlon(latitude=_navinfo.mLat, longitude=_navinfo.mLon)
-        _navinfo.utmX = utm_pos[0]
-        _navinfo.utmY = utm_pos[1]
+        # _navinfo.mLat = self.lat
+        # _navinfo.mLon = self.lon
+        # # utm_pos output: [utmX, utmY, lon_zone, lat_zone]
+        # utm_pos = utm.from_latlon(latitude=_navinfo.mLat, longitude=_navinfo.mLon)
+        # _navinfo.utmX = utm_pos[0]
+        # _navinfo.utmY = utm_pos[1]
         
         
 

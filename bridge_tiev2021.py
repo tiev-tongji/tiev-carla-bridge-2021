@@ -265,7 +265,8 @@ def pub_objectlist_loop(interval):
 
 
 def publish_all_async(interval_high, interval_low):
-	rc = redis.StrictRedis(host="10.60.144.31", port=6379)
+	rc = redis.StrictRedis(host="124.222.194.135", port=4321, password="tjredis!!")
+	
 	t_pub_navinfo = threading.Thread(target=pub_navinfo_loop, args=(interval_high, rc))
 	_threads.append(t_pub_navinfo)
 
@@ -300,7 +301,7 @@ def get_redis(pubsub):
 				print("recv message from %s" % (item['channel']))
 
 def subscribe_all():
-	rc = redis.StrictRedis(host="10.60.144.31", port=6379)   	
+	rc = redis.StrictRedis(host="124.222.194.135", port=4321, password="tjredis!!")	
 	ps = rc.pubsub()
 	ps.subscribe('CANCONTROL')
 	thread_sub = threading.Thread(target=get_redis, args=(ps,))

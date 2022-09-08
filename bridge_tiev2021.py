@@ -215,6 +215,10 @@ def pub_navinfo_loop(interval, redis_client):
 			break
 		start = time.process_time()
 		_mutex_navinfo.acquire()
+
+		#以下用于测试NAVINFO
+		# _navinfo.mAngularRateZ = 1.234
+		# _navinfo.mHPOSAccuracy = 5.678
 		
 		redis_client.publish("NAVINFO", _navinfo.encode())
 
@@ -231,6 +235,10 @@ def pub_caninfo_loop(interval, redis_client):
 			break
 		start = time.process_time()
 		_mutex_caninfo.acquire()
+
+		#以下用于测试CANINFO
+		# _caninfo.carspeed = 1234
+		# _caninfo.carsteer = 5678
 	
 		redis_client.publish("CANINFO", _caninfo.encode())
 
@@ -266,6 +274,7 @@ def pub_objectlist_loop(interval):
 
 def publish_all_async(interval_high, interval_low):
 	rc = redis.StrictRedis(host="124.222.194.135", port=4321, password="tjredis!!")
+
 	
 	t_pub_navinfo = threading.Thread(target=pub_navinfo_loop, args=(interval_high, rc))
 	_threads.append(t_pub_navinfo)
@@ -284,6 +293,10 @@ def cancontrol_handler(channel, data):
 	msg = structCANCONTROL.decode(data)
 	_cancontrol.aimsteer = msg.aimsteer  # deg
 	_cancontrol.aimspeed = msg.aimspeed
+	
+	#以下用于测试CANCONTROL
+	print(_cancontrol.aimsteer)
+	print(_cancontrol.aimspeed)
 
 def cancontrol_handler_zlg(channel, data): 
 	msg = structCANCONTROLZLG.decode(data)

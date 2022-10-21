@@ -432,7 +432,7 @@ class World(object):
         cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
         cam_pos_index2 = 1
         # Get a random blueprint.
-        blueprint = random.choice(self.world.get_blueprint_library().filter("vehicle").filter("mini"))
+        blueprint = self.world.get_blueprint_library().filter("vehicle").filter("mini")[0]
         if self._actor_filter == 'walker':
             blueprint = random.choice(self.world.get_blueprint_library().filter(self._actor_filter))
             print('walker')
@@ -1557,8 +1557,7 @@ class GnssSensor(object):
         forward = t.get_forward_vector()
         right = t.get_right_vector()
 
-
-
+		# Town03
         _navinfo.utmX = _utm_origin[0] + t.location.x
         _navinfo.utmY = _utm_origin[1] - t.location.y
         gps = utm.to_latlon(_navinfo.utmX, _navinfo.utmY,

@@ -186,6 +186,8 @@ print("origin: ", _utm_origin[0], ", ", _utm_origin[1])
 _record_on = False
 _stop_lcm = False
 tiev_control = False
+is_xiqu_map = False
+global_planning_test = False
 
 kMapRowNum = 501
 kMapRowCenter = 351
@@ -1566,20 +1568,22 @@ class GnssSensor(object):
         _navinfo.mLon = gps[1]
         _navinfo.mAlt = t.location.z
 
-        # _navinfo.mLat = self.lat
-        # _navinfo.mLon = self.lon
-        # # utm_pos output: [utmX, utmY, lon_zone, lat_zone]
-        # utm_pos = utm.from_latlon(latitude=_navinfo.mLat, longitude=_navinfo.mLon)
-        # _navinfo.utmX = utm_pos[0]
-        # _navinfo.utmY = utm_pos[1]
+        if is_xiqu_map:
+            _navinfo.mLat = self.lat
+            _navinfo.mLon = self.lon
+            # utm_pos output: [utmX, utmY, lon_zone, lat_zone]
+            utm_pos = utm.from_latlon(latitude=_navinfo.mLat, longitude=_navinfo.mLon)
+            _navinfo.utmX = utm_pos[0]
+            _navinfo.utmY = utm_pos[1]
+            _navinfo.mAlt = t.location.z
         
-        
-
-        # xiqu global planning test
-        # _navinfo.mLat = 31.2930400
-        # _navinfo.mLon = 121.2027973
-        # _navinfo.utmX = 328942
-        # _navinfo.utmY = 3463473
+        if global_planning_test:
+            # task point 3 			
+			# utm is meaningless
+            _navinfo.mLat = 31.29211402
+            _navinfo.mLon = 121.2017906
+            _navinfo.utmX = 328942
+            _navinfo.utmY = 3463473
 
         heading = -t.rotation.yaw
         while heading < -180:
@@ -2049,6 +2053,16 @@ def main():
         action='store_true',
         default=False,
         help='enable autopilot')          
+    argparser.add_argument(
+        '--xiqu',
+        action='store_true',
+        default=False,
+        help='using xiqu map navinfo')          
+    argparser.add_argument(
+        '--global_planning_test',
+        action='store_true',
+        default=False,
+        help='using global planning test navinfo')          
     args = argparser.parse_args()
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
@@ -2058,8 +2072,15 @@ def main():
 
     logging.info('listening to server %s:%s', args.host, args.port)
 
+    if args.xiqu:
+        global is_xiqu_map
+        is_xiqu_map = True
+    if args.global_planning_test:
+        global global_planning_test
+        global_planning_test = True
     print('brige running')
     print('using_zlg_control: ', using_zlg_control)
+    print('using xiqu map: ', is_xiqu_map)
     try:
         game_loop(args)
         global _stop_lcm

@@ -178,15 +178,14 @@ _mutex_cancontrol = threading.Lock()
 _threads = []
 
 _pid_controller = PID()
+_manual_pid_controller = PID()
 # 121: 12: 44E 31: 16: 54N
-_utm_origin = utm.from_latlon(31.281666666666666, 121.21222222222222) #Town03
-print("origin: ", _utm_origin[0], ", ", _utm_origin[1])
-#_utm_origin = utm.from_latlon(31.281589, 121.215578)
+_utm_origin = utm.from_latlon(31.281589, 121.215578)
 
 _record_on = False
 _stop_lcm = False
 tiev_control = False
-is_xiqu_map = False
+is_xiqu_map = False 
 global_planning_test = False
 
 kMapRowNum = 501
@@ -768,6 +767,8 @@ class KeyboardControl(object):
         self.walkers_list = []
         self.all_id = []
         self.barrels_list = []
+        self.manual_aimspeed = 0
+        self.manual_aimsteer = 0
 
     def getDistance(self, p1, p2):
         return math.sqrt((p1.location.x - p2.location.x)**2 + (p1.location.y - p2.location.y)**2)
@@ -1170,23 +1171,31 @@ class KeyboardControl(object):
             world.player.apply_control(self._control)
 
     def _parse_vehicle_keys(self, keys, milliseconds):
+        manual_aimspeed_step = 0.2
         if keys[K_UP] or keys[K_w]:
-            self._control.throttle = min(self._control.throttle + 0.01, 1)
+            # self._control.throttle = min(self._control.throttle + 0.01, 1)
+            self.manual_aimspeed += manual_aimspeed_step
         else:
-            self._control.throttle = 0.0
+            pass
+            # self._control.throttle = 0.0
 
         if keys[K_DOWN] or keys[K_s]:
-            self._control.brake = min(self._control.brake + 0.2, 1)
+            # self._control.brake = min(self._control.brake + 0.2, 1)
+            self.manual_aimspeed -= manual_aimspeed_step
+            self.manual_aimsteer = 0
         else:
-            self._control.brake = 0
+            # self._control.brake = 0
+            pass
 
-        steer_increment = 5e-4 * milliseconds
+        steer_increment = 2e-4 * milliseconds
         if keys[K_LEFT] or keys[K_a]:
+            self.manual_aimsteer -= steer_increment
             if self._steer_cache > 0:
                 self._steer_cache = 0
             else:
                 self._steer_cache -= steer_increment
         elif keys[K_RIGHT] or keys[K_d]:
+            self.manual_aimsteer += steer_increment
             if self._steer_cache < 0:
                 self._steer_cache = 0
             else:
@@ -1194,7 +1203,16 @@ class KeyboardControl(object):
         else:
             self._steer_cache = 0.0
         self._steer_cache = min(0.7, max(-0.7, self._steer_cache))
-        self._control.steer = round(self._steer_cache, 1)
+        self.manual_aimsteer = min(0.7, max(-0.7, self.manual_aimsteer))
+        # self._control.steer = round(self._steer_cache, 1)
+        self._control.steer = round(self.manual_aimsteer, 1)
+
+        _manual_pid_controller.tick(self.manual_aimspeed / 3.6 - _caninfo.carspeed / 360, self.manual_aimsteer)
+        # self._control.steer = _manual_pid_controller.steer
+        self._control.brake = _manual_pid_controller.brake
+        self._control.throttle = _manual_pid_controller.throttle
+        self._control.hand_brake = 0      
+
         # self._control.hand_brake = keys[K_SPACE]
 
     def _parse_walker_keys(self, keys, milliseconds, world):
@@ -1559,16 +1577,9 @@ class GnssSensor(object):
         forward = t.get_forward_vector()
         right = t.get_right_vector()
 
-		# Town03
-        _navinfo.utmX = _utm_origin[0] + t.location.x
-        _navinfo.utmY = _utm_origin[1] - t.location.y
-        gps = utm.to_latlon(_navinfo.utmX, _navinfo.utmY,
-                            _utm_origin[2], _utm_origin[3])
-        _navinfo.mLat = gps[0]
-        _navinfo.mLon = gps[1]
-        _navinfo.mAlt = t.location.z
 
         if is_xiqu_map:
+            print('xiqu navinfo')
             _navinfo.mLat = self.lat
             _navinfo.mLon = self.lon
             # utm_pos output: [utmX, utmY, lon_zone, lat_zone]
@@ -1576,6 +1587,15 @@ class GnssSensor(object):
             _navinfo.utmX = utm_pos[0]
             _navinfo.utmY = utm_pos[1]
             _navinfo.mAlt = t.location.z
+        else:
+            # Carla Town
+            _navinfo.mLat = self.lat + 31.281589
+            _navinfo.mLon = self.lon + 121.215578
+            _navinfo.mAlt = t.location.z
+            utm_pos = utm.from_latlon(latitude=_navinfo.mLat, longitude=_navinfo.mLon)
+            _navinfo.utmX = utm_pos[0]
+            _navinfo.utmY = utm_pos[1]
+
         
         if global_planning_test:
             # task point 3 			
@@ -1585,10 +1605,10 @@ class GnssSensor(object):
             _navinfo.utmX = 328942
             _navinfo.utmY = 3463473
 
-        heading = -t.rotation.yaw
+        heading = - t.rotation.yaw
         while heading < -180:
             heading = heading + 360
-        while heading > 180:
+        while heading >= 180:
             heading = heading - 360
         _navinfo.mHeading = math.radians(heading)
         _navinfo.mPitch = t.rotation.pitch
@@ -1603,8 +1623,8 @@ class GnssSensor(object):
 
         _navinfo.mAx = dot(a, right)
         _navinfo.mAy = dot(a, forward)
-
-        _navinfo.timestamp = int(event.timestamp * 1000)
+        
+        _navinfo.timestamp = int(round(time.time()*1000000))
         
         _navinfo.mCurvature = 0
         _navinfo.mRTKStatus = 1
@@ -1910,7 +1930,9 @@ class CameraManager(object):
                 # make sure two corner point selected is counter-clockwise arranged. 
                 object_list_pass2cpp.append([obj.corners.p2.x, obj.corners.p2.y, obj.corners.p1.x, obj.corners.p1.y, \
                     obj.length, obj.width, inflation_size])
-            self.map_processor.GetGridMap(data.flatten(), _fusionmap.cells, 0, object_list_pass2cpp, True) # 0 for not showing info. 1 for showing.
+            erase_cloud_for_dynamicobj = False
+            show_info = False
+            self.map_processor.GetGridMap(data.flatten(), _fusionmap.cells, show_info, object_list_pass2cpp, erase_cloud_for_dynamicobj) # 0 for not showing info. 1 for showing.
             _fusionmap.resolution = kMapResolution
             _fusionmap.cols = kMapColNum
             _fusionmap.rows = kMapRowNum
@@ -1957,7 +1979,7 @@ def game_loop(args):
     try:
         client = carla.Client(args.host, args.port)
         client.set_timeout(2.0)
-        #client.load_world('Town04')
+        # client.load_world('Town05')
 
         display = pygame.display.set_mode(
             (args.width, args.height),

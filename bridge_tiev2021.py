@@ -181,6 +181,8 @@ _pid_controller = PID()
 _manual_pid_controller = PID()
 # 121: 12: 44E 31: 16: 54N
 _utm_origin = utm.from_latlon(31.281589, 121.215578)
+xiqumap_origin_utmXY = [328919.83836515166, 3463348.7826909614]
+xiqumap_origin_lonlat = [121.2025854628344, 31.291919797036996]
 
 _record_on = False
 _stop_lcm = False
@@ -206,6 +208,20 @@ def find_weather_presets():
 def get_actor_display_name(actor, truncate=250):
     name = ' '.join(actor.type_id.replace('_', '.').title().split('.')[1:])
     return (name[:truncate - 1] + u'\u2026') if len(name) > truncate else name
+
+
+# didn't consider z
+def navinfo_to_maptransform(nav, trans):
+    utmx = _navinfo.utmX
+    utmy = _navinfo.utmY
+    heading = _navinfo.mHeading
+    utmx_ori = xiqumap_origin_utmXY[0]
+    utmy_ori = xiqumap_origin_utmXY[1]
+    mapx = utmx - utmx_ori
+    mapy = -(utmy - utmy_ori)
+    trans.location.x = mapx
+    trans.location.y = mapy
+    trans.rotation.yaw = - math.degrees(heading)
 
 
 def pub_navinfo_loop(interval):
@@ -278,13 +294,15 @@ def pub_objectlist_loop(interval):
 
 
 def publish_all_async(interval_high, interval_low):
-    t_pub_navinfo = threading.Thread(target=pub_navinfo_loop, args=(interval_high,))
-    _threads.append(t_pub_navinfo)
+    # t_pub_navinfo = threading.Thread(target=pub_navinfo_loop, args=(interval_high,))
+    # _threads.append(t_pub_navinfo)
 
     t_pub_caninfo = threading.Thread(target=pub_caninfo_loop, args=(interval_high,))
+    t_pub_caninfo.setDaemon(True)
     _threads.append(t_pub_caninfo)
 
     t_pub_objectlist = threading.Thread(target=pub_objectlist_loop, args=(interval_low,))
+    t_pub_objectlist.setDaemon(True)
     _threads.append(t_pub_objectlist)
 
     for thread in _threads:
@@ -304,6 +322,37 @@ def cancontrol_handler_zlg(channel, data):
     _cancontrol.brake = msg.brake
     _cancontrol.reverse = msg.reverse
 
+global _get_navinfo
+_get_navinfo = False
+def navinfo_handler(channel, data): 
+    data = structNAVINFO.decode(data)
+    _navinfo.mLat = data.mLat
+    _navinfo.mLon = data.mLon
+    _navinfo.mAlt = data.mAlt
+    _navinfo.utmX = data.utmX
+    _navinfo.utmY = data.utmY
+    print("get navinfo: ", _navinfo.utmX, _navinfo.utmY)
+
+    _navinfo.mHeading = data.mHeading
+    _navinfo.mPitch = data.mPitch
+    _navinfo.mAngularRateZ = data.mAngularRateZ
+
+    _navinfo.mSpeed3d = data.mSpeed3d
+    _navinfo.mVe = data.mVe
+    _navinfo.mVn = data.mVn
+
+    _navinfo.mAx = data.mAx
+    _navinfo.mAy = data.mAy
+    
+    _navinfo.timestamp = data.timestamp
+    
+    _navinfo.mCurvature = data.mCurvature
+    _navinfo.mRTKStatus = data.mRTKStatus
+    _navinfo.mHPOSAccuracy = data.mHPOSAccuracy
+    _navinfo.isReckoningVaild = data.isReckoningVaild
+    _navinfo.mGpsNumObs = data.mGpsNumObs
+    global _get_navinfo
+    _get_navinfo = True
 
 def get_xcm():
     while True:
@@ -311,11 +360,6 @@ def get_xcm():
             break  
         _tunnel.handle()
 
-global _tunnel_sub
-if using_zlg_control:
-    _tunnel_sub = _tunnel.subscribe('CANCONTROLZLG', cancontrol_handler_zlg)
-else:
-    _tunnel_sub = _tunnel.subscribe('CANCONTROL', cancontrol_handler)
 def subscribe_all():
     if xcm_version == "LCM":
         if using_zlg_control:
@@ -324,7 +368,9 @@ def subscribe_all():
             thread_sub.start()
         else:
             _tunnel.subscribe('CANCONTROL', cancontrol_handler)
+            _tunnel.subscribe('NAVINFO', navinfo_handler)
             thread_sub = threading.Thread(target=get_xcm, args=())
+            thread_sub.setDaemon(True)
             thread_sub.start()
     elif xcm_version == "ZCM":
         _tunnel.subscribe_raw('CANCONTROL', cancontrol_handler)
@@ -483,6 +529,10 @@ class World(object):
             self.player = self.world.try_spawn_actor(blueprint, spawn_point)
             restart_distance = -1
         while self.player is None:
+            global _get_navinfo
+            if not _get_navinfo:
+                print("no navinfo")
+                continue
             if not self.map.get_spawn_points():
                 print('There are no spawn points available in your map/town.')
                 print('Please add some Vehicle Spawn Point to your UE4 scene.')
@@ -491,16 +541,14 @@ class World(object):
             print('exist {:d} spawn_points'.format(len(spawn_points)))
             spawn_point = random.choice(
                 spawn_points) if spawn_points else carla.Transform()
-            spawn_point.location.x = spawn_origin[restart_pos_str][0][0]
-            spawn_point.location.y = spawn_origin[restart_pos_str][0][1]
-            spawn_point.location.z = spawn_origin[restart_pos_str][0][2]
-            spawn_point.rotation.yaw = spawn_origin[restart_pos_str][1][0]
+            navinfo_to_maptransform(_navinfo, spawn_point)
             self.player = self.world.try_spawn_actor(blueprint, spawn_point)
             if self.player is None:
-                print("use random spawn point")
-                spawn_point = random.choice(
-                    spawn_points) if spawn_points else carla.Transform()
-                self.player = self.world.try_spawn_actor(blueprint, spawn_point)
+                print("navinfo for spawn not valid")
+                # spawn_point = random.choice(
+                #     spawn_points) if spawn_points else carla.Transform()
+                # self.player = self.world.try_spawn_actor(blueprint, spawn_point)
+        print("player: ", self.player is None)
         # Set up the sensors.
         self.collision_sensor = CollisionSensor(self.player, self.hud)
         self.lane_invasion_sensor = LaneInvasionSensor(self.player, self.hud)
@@ -541,6 +589,11 @@ class World(object):
             else:
                 if (pos.location.x - self.history_position[-1][0])**2 + (pos.location.y - self.history_position[-1][1])**2 > 1:
                     self.history_position.append([pos.location.x, pos.location.y, pos.location.z+0.1, pos.rotation.yaw])
+            global _get_navinfo
+            if _get_navinfo:
+                cur_trans = self.player.get_transform()
+                navinfo_to_maptransform(_navinfo, cur_trans)
+                self.player.set_transform(cur_trans)
 
     def render(self, display):
         self.camera_manager.render(display)
@@ -1553,7 +1606,9 @@ class GnssSensor(object):
         world = self._parent.get_world()
         bp = world.get_blueprint_library().find('sensor.other.gnss')
         self.sensor = world.spawn_actor(bp, carla.Transform(
-            carla.Location(x=1.0, z=2.8)), attach_to=self._parent)
+            carla.Location(x=0.0, y=0.0, z=0.0)))
+        # self.sensor = world.spawn_actor(bp, carla.Transform(
+        #     carla.Location(x=1.0, z=2.8)), attach_to=self._parent)
         # We need to pass the lambda a weak reference to self to avoid circular
         # reference.
         weak_self = weakref.ref(self)
@@ -1561,6 +1616,7 @@ class GnssSensor(object):
 
     @staticmethod
     def _on_gnss_event(weak_self, event):
+        return
         self = weak_self()
         if not self:
             return
@@ -1975,6 +2031,7 @@ def game_loop(args):
     pygame.init()
     pygame.font.init()
     world = None
+    subscribe_all()
 
     try:
         client = carla.Client(args.host, args.port)
@@ -1990,7 +2047,6 @@ def game_loop(args):
         controller = KeyboardControl(world, args.autopilot)
 
         publish_all_async(0.02, 0.05)
-        subscribe_all()
 
         clock = pygame.time.Clock()
 
@@ -2107,11 +2163,12 @@ def main():
         game_loop(args)
         global _stop_lcm
         _stop_lcm = True
-        _tunnel.unsubscribe(_tunnel_sub)
         
-
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
+    
+    finally:
+        print('\nExit!')
 
 
 if __name__ == '__main__':
